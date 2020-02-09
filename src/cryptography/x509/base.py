@@ -78,6 +78,13 @@ class InvalidVersion(Exception):
         self.parsed_version = parsed_version
 
 
+class InvalidIssuer(Exception):
+    def __init__(self, expected, received):
+        super(InvalidIssuer, self).__init__()
+        self.expected = expected
+        self.received = received
+
+
 @six.add_metaclass(abc.ABCMeta)
 class Certificate(object):
     @abc.abstractmethod
@@ -181,6 +188,18 @@ class Certificate(object):
     def public_bytes(self, encoding):
         """
         Serializes the certificate to PEM or DER format.
+        """
+
+    @abc.abstractmethod
+    def is_issued_by(self, issuer_candidate):
+        """
+        Returns whether the certificate is issued by `issuer_candidate`.
+        """
+
+    @abc.abstractmethod
+    def is_issuer_of(self, issued_candidate):
+        """
+        Returns whether the `issued_candidate` is issued by the certificate.
         """
 
 

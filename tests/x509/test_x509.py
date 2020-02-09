@@ -18,7 +18,7 @@ import pytz
 import six
 
 from cryptography import utils, x509
-from cryptography.exceptions import UnsupportedAlgorithm
+from cryptography.exceptions import UnsupportedAlgorithm, InvalidSignature
 from cryptography.hazmat._der import (
     BIT_STRING, CONSTRUCTED, CONTEXT_SPECIFIC, DERReader, GENERALIZED_TIME,
     INTEGER, OBJECT_IDENTIFIER, PRINTABLE_STRING, SEQUENCE, SET, UTC_TIME
@@ -4675,3 +4675,35 @@ def test_random_serial_number(monkeypatch):
         serial_number == utils.int_from_bytes(sample_data, "big") >> 1
     )
     assert serial_number.bit_length() < 160
+
+
+@pytest.mark.requires_backend_interface(interface=X509Backend)
+class TestIssuer(object):
+
+    @staticmethod
+    def load(backend, filename):
+        return _load_cert(
+            os.path.join("x509", "is_issued_by", filename),
+            x509.load_pem_x509_certificate,
+            backend
+        )
+
+    def test_bad_issuer(self, backend):
+        cert = self.load(backend, "not_self_signed.pem")
+        bad_issuer = cert
+        with pytest.raises(x509.base.InvalidIssuer):
+            cert.is_issued_by(bad_issuer)
+        with pytest.raises(x509.base.InvalidIssuer):
+            bad_issuer.is_issuer_of(cert)
+
+    def test_signatures(self, backend):
+        for key_type in "rsa", "dsa", "ecdsa":
+            issuer = self.load(backend, key_type + "_issuer.pem")
+            good_leaf = self.load(backend, key_type + "_good_leaf.pem")
+            assert good_leaf.is_issued_by(issuer)
+            assert issuer.is_issuer_of(good_leaf)
+            bad_leaf = self.load(backend, key_type + "_bad_leaf.pem")
+            with pytest.raises(InvalidSignature):
+                bad_leaf.is_issued_by(issuer)
+            with pytest.raises(InvalidSignature):
+                issuer.is_issuer_of(bad_leaf)
