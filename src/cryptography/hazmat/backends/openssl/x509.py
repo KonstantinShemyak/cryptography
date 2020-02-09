@@ -8,7 +8,7 @@ import datetime
 import operator
 
 from cryptography import utils, x509
-from cryptography.exceptions import UnsupportedAlgorithm
+from cryptography.exceptions import UnsupportedAlgorithm, InvalidSignature
 from cryptography.hazmat.backends.openssl.decode_asn1 import (
     _CERTIFICATE_EXTENSION_PARSER, _CERTIFICATE_EXTENSION_PARSER_NO_SCT,
     _CRL_EXTENSION_PARSER, _CSR_EXTENSION_PARSER,
@@ -19,7 +19,7 @@ from cryptography.hazmat.backends.openssl.encode_asn1 import (
     _encode_asn1_int_gc
 )
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import dsa, ec, rsa
+from cryptography.hazmat.primitives.asymmetric import dsa, ec, rsa, padding
 
 
 @utils.register_interface(x509.Certificate)
@@ -161,6 +161,40 @@ class _Certificate(object):
 
         self._backend.openssl_assert(res == 1)
         return self._backend._read_mem_bio(bio)
+
+    def is_issued_by(self, issuer_candidate):
+        if issuer_candidate.subject != self.issuer:
+            raise x509.base.InvalidIssuer(
+                expected=self.issuer, received=issuer_candidate.subject)
+
+        pkey = issuer_candidate.public_key()
+        signature = self.signature
+        data = self.tbs_certificate_bytes
+        try:
+            if isinstance(pkey, rsa.RSAPublicKeyWithSerialization):
+                pkey.verify(
+                    signature, data,
+                    padding=padding.PKCS1v15(),
+                    algorithm=self.signature_hash_algorithm,
+                )
+            elif isinstance(pkey, dsa.DSAPublicKeyWithSerialization):
+                pkey.verify(
+                    signature, data,
+                    algorithm=self.signature_hash_algorithm,
+                )
+            elif isinstance(pkey, ec.EllipticCurvePublicKeyWithSerialization):
+                # EC verify() requires instance of ec.ECDSA
+                pkey.verify(
+                    signature, data,
+                    signature_algorithm=ec.ECDSA(self.signature_hash_algorithm))
+            else:
+                raise UnsupportedAlgorithm(
+                    '{} verification is not implemented'
+                        .format(pkey.__class__)
+                )
+        except InvalidSignature:
+            raise
+        return True
 
 
 @utils.register_interface(x509.RevokedCertificate)
