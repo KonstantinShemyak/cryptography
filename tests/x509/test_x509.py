@@ -17,7 +17,7 @@ import pytest
 import pytz
 
 from cryptography import utils, x509
-from cryptography.exceptions import UnsupportedAlgorithm
+from cryptography.exceptions import InvalidSignature, UnsupportedAlgorithm
 from cryptography.hazmat._der import (
     BIT_STRING,
     CONSTRUCTED,
@@ -5198,3 +5198,36 @@ def test_random_serial_number(monkeypatch):
 
     assert serial_number == int.from_bytes(sample_data, "big") >> 1
     assert serial_number.bit_length() < 160
+
+
+class TestHasSignatureOf(object):
+    @staticmethod
+    def load(backend, filename):
+        return _load_cert(
+            os.path.join("x509", "has_signature_of", filename),
+            x509.load_pem_x509_certificate,
+            backend,
+        )
+
+    @pytest.mark.supported(
+        only_if=lambda backend: backend.ed25519_supported(),
+        skip_message="Requires OpenSSL with Ed25519 support",
+    )
+    @pytest.mark.supported(
+        only_if=lambda backend: backend.ed448_supported(),
+        skip_message="Requires OpenSSL with Ed448 support",
+    )
+    def test_signatures(self, backend):
+        for key_type in "rsa", "dsa", "ecdsa", "ed25519", "ed448":
+            issuer = self.load(backend, key_type + "_issuer.pem")
+            good_leaf = self.load(backend, key_type + "_good_leaf.pem")
+            assert good_leaf._has_signature_of(issuer)
+            bad_leaf = self.load(backend, key_type + "_bad_leaf.pem")
+            with pytest.raises(InvalidSignature):
+                bad_leaf._has_signature_of(issuer)
+
+    def test_unsupported_curve(self, backend):
+        # bp-cert.pem uses brainpoolP224t1, which is not in _CURVE_TYPES
+        unsupported_cert = self.load(backend, "bp-cert.pem")
+        with pytest.raises(UnsupportedAlgorithm):
+            unsupported_cert._has_signature_of(unsupported_cert)

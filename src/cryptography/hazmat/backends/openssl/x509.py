@@ -8,7 +8,7 @@ import operator
 import typing
 
 from cryptography import utils, x509
-from cryptography.exceptions import UnsupportedAlgorithm
+from cryptography.exceptions import UnsupportedAlgorithm, _Reasons
 from cryptography.hazmat.backends.openssl import dsa, ec, rsa
 from cryptography.hazmat.backends.openssl.decode_asn1 import (
     _asn1_integer_to_int,
@@ -21,7 +21,7 @@ from cryptography.hazmat.backends.openssl.encode_asn1 import (
     _encode_asn1_int_gc,
     _txt2obj_gc,
 )
-from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives import asymmetric, hashes, serialization
 from cryptography.x509.base import _PUBLIC_KEY_TYPES
 from cryptography.x509.name import _ASN1Type
 
@@ -165,6 +165,73 @@ class _Certificate(x509.Certificate):
 
         self._backend.openssl_assert(res == 1)
         return self._backend._read_mem_bio(bio)
+
+    def _has_signature_of(self, signer_candidate: x509.Certificate) -> bool:
+        """
+        Returns True if the certificate holds a valid signature by
+        `signer_candidate`.
+        Raises appropriate exception otherwise.
+        No other checks, e.g. comparison of issuer and leaf names, is done.
+        """
+        try:
+            pubkey = signer_candidate.public_key()
+        except ValueError as e:
+            # OpenSSL is unable to get the public key
+            raise UnsupportedAlgorithm(
+                str(e), _Reasons.UNSUPPORTED_PUBLIC_KEY_ALGORITHM
+            )
+
+        signature = self.signature
+        data = self.tbs_certificate_bytes
+        if isinstance(pubkey, asymmetric.rsa.RSAPublicKeyWithSerialization):
+            assert isinstance(
+                self.signature_hash_algorithm, hashes.HashAlgorithm
+            )
+            pubkey.verify(
+                signature,
+                data,
+                padding=asymmetric.padding.PKCS1v15(),
+                algorithm=self.signature_hash_algorithm,
+            )
+        elif isinstance(pubkey, asymmetric.dsa.DSAPublicKeyWithSerialization):
+            assert isinstance(
+                self.signature_hash_algorithm, hashes.HashAlgorithm
+            )
+            pubkey.verify(
+                signature,
+                data,
+                algorithm=self.signature_hash_algorithm,
+            )
+        elif isinstance(
+            pubkey, asymmetric.ec.EllipticCurvePublicKeyWithSerialization
+        ):
+            assert isinstance(
+                self.signature_hash_algorithm, hashes.HashAlgorithm
+            )
+            # EC verify() requires instance of ec.ECDSA
+            pubkey.verify(
+                signature,
+                data,
+                signature_algorithm=asymmetric.ec.ECDSA(
+                    self.signature_hash_algorithm
+                ),
+            )
+        elif isinstance(
+            pubkey,
+            (
+                asymmetric.ed25519.Ed25519PublicKey,
+                asymmetric.ed448.Ed448PublicKey,
+            ),
+        ):
+            pubkey.verify(signature, data)
+        else:
+            # Should not happen, all _PUBLIC_KEY_TYPES are tried
+            raise UnsupportedAlgorithm(  # pragma: no cover
+                "Signature algorithm is not supported",
+                _Reasons.UNSUPPORTED_PUBLIC_KEY_ALGORITHM,
+            )
+
+        return True
 
 
 class _RevokedCertificate(x509.RevokedCertificate):
