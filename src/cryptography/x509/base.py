@@ -104,6 +104,13 @@ class Certificate(metaclass=abc.ABCMeta):
         Returns the public key
         """
 
+    @abc.abstractmethod
+    def _has_signature_of(self, signer_candidate: "Certificate") -> bool:
+        """
+        Returns True if the certificate holds a valid signature by
+        `signer_candidate`
+        """
+
     @abc.abstractproperty
     def not_valid_before(self) -> datetime.datetime:
         """

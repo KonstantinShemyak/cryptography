@@ -454,36 +454,7 @@ X.509 Certificate Object
         :type: bytes
 
         The DER encoded bytes payload (as defined by :rfc:`5280`) that is hashed
-        and then signed by the private key of the certificate's issuer. This
-        data may be used to validate a signature, but use extreme caution as
-        certificate validation is a complex problem that involves much more
-        than just signature checks.
-
-        To validate the signature on a certificate you can do the following.
-        Note: This only verifies that the certificate was signed with the
-        private key associated with the public key provided and does not
-        perform any of the other checks needed for secure certificate
-        validation. Additionally, this example will only work for RSA public
-        keys with ``PKCS1v15`` signatures, and so it can't be used for general
-        purpose signature verification.
-
-        .. doctest::
-
-           >>> from cryptography.hazmat.primitives.serialization import load_pem_public_key
-           >>> from cryptography.hazmat.primitives.asymmetric import padding
-           >>> issuer_public_key = load_pem_public_key(pem_issuer_public_key)
-           >>> cert_to_check = x509.load_pem_x509_certificate(pem_data_to_check)
-           >>> issuer_public_key.verify(
-           ...     cert_to_check.signature,
-           ...     cert_to_check.tbs_certificate_bytes,
-           ...     # Depends on the algorithm used to create the certificate
-           ...     padding.PKCS1v15(),
-           ...     cert_to_check.signature_hash_algorithm,
-           ... )
-
-           An
-           :class:`~cryptography.exceptions.InvalidSignature`
-           exception will be raised if the signature fails to verify.
+        and then signed by the private key of the certificate's issuer.
 
     .. method:: public_bytes(encoding)
 
@@ -495,6 +466,52 @@ X.509 Certificate Object
 
         :return bytes: The data that can be written to a file or sent
             over the network to be verified by clients.
+
+    .. method:: _has_signature_of(signer)
+
+        .. versionadded:: 3.4
+
+        :param certifcate:
+            :class:`~cryptography.x509.Certificate` whose public key is
+            checked to be the issuer or an issued certificate.
+
+        :return bool: This method can only return ``True`` on successful
+            signature verification. Otherwise, the following exceptions
+            are raised:
+
+            * :class:`~cryptography.exceptions.InvalidSignature`:
+              the signature fails to verify.
+            * :class:`~cryptography.exceptions.UnsupportedAlgorithm`:
+              signature is made with an algorithm which is not supported.
+
+        :Note: To check whether the certificate is **issued** by the
+            ``signer``, the caller must at least compare subject/issuer
+            names, and perform other tests such as check ``CA`` bit of the
+            issuer, ``KeyUsage`` bits, validity dates, presence and agreement
+            of ``authorityKeyIdentifier`` / ``subjectKeyIdentifier``
+            extensions, and anything else subject to particular policies.
+            Demo example below checks ``not_valid_after`` dates and accepts
+            only one particular signature algorithm:
+
+            .. testsetup:: has_signature_of
+
+                from datetime import datetime
+                from cryptography.x509.base import load_pem_x509_certificate as lp
+                ca = lp(open("vectors/cryptography_vectors/x509/has_signature_of/ed448_issuer.pem", "rb").read())
+                leaf = lp(open("vectors/cryptography_vectors/x509/has_signature_of/ed448_issuer.pem", "rb").read())
+                now = datetime.strptime("2021-04-01", "%Y-%m-%d")
+
+            .. testcode:: has_signature_of
+
+                def accepted_issuer(ca, leaf):
+                    return (leaf._has_signature_of(ca)
+                        and leaf.issuer == ca.subject
+                        and leaf.not_valid_after > now
+                        and ca.not_valid_after > now
+                        and ca.signature_algorithm_oid._name == 'ed448')
+
+                accepted_issuer(ca, leaf)
+
 
 X.509 CRL (Certificate Revocation List) Object
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
