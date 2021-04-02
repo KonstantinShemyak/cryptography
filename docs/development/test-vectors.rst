@@ -420,6 +420,14 @@ Custom X.509 Vectors
   using ``ed448-pkcs8.pem`` as key.
 * ``ca/rsa_ca.pem`` - A self-signed RSA certificate with ``basicConstraints``
   set to true. Its private key is ``ca/rsa_key.pem``.
+* Directory ``has_signature_of``, files
+  ``{rsa,dsa,ecdsa,ed25519,ed448}{issuer,good_leaf,bad_leaf}.pem``
+  - triplets of (CA certificate, leaf certificate issued by the CA, same leaf
+  certificate with invalid signature) for the five supported signature
+  algorithms
+* ``has_signature_of/bp-cert.pem`` - self-signed certificate using
+  ``brainpoolP224t1`` curve for signature - one of curves not supported by
+  Cryptography.
 
 Custom X.509 Request Vectors
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
